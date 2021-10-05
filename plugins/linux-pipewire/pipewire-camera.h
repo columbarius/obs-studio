@@ -1,4 +1,4 @@
-/* portal.c
+/* pipewire-camera.h
  *
  * Copyright 2021 Georges Basile Stavracas Neto <georges.stavracas@gmail.com>
  *
@@ -20,12 +20,4 @@
 
 #pragma once
 
-#include <stdint.h>
-#include <gio/gio.h>
-
-uint32_t portal_get_available_capture_types(void);
-uint32_t portal_get_screencast_version(void);
-
-GDBusConnection *portal_get_dbus_connection(void);
-GDBusProxy *portal_get_camera_proxy(void);
-GDBusProxy *portal_get_screencast_proxy(void);
+void pipewire_camera_load(void);

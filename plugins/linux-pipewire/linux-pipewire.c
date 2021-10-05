@@ -25,6 +25,7 @@
 #include "pipewire-common.h"
 #include "pipewire-capture.h"
 #include "pipewire-virtualcam.h"
+#include "pipewire-camera.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("linux-pipewire", "en-US")
@@ -52,6 +53,9 @@ bool obs_module_load(void)
 
 	// OBS PipeWire Virtual Camera
 	virtual_cam_register_output();
+
+	// OBS PipeWire Camera
+	pipewire_camera_load();
 
 	return true;
 }
