@@ -227,8 +227,24 @@ inline BasicOutputHandler::BasicOutputHandler(OBSBasic *main_) : main(main_)
 					       "virtualcam_output", nullptr,
 					       nullptr);
 #else
-		virtualCam = obs_output_create(
-			"v4l2_output", "virtualcam_output", nullptr, nullptr);
+		if (obs_get_output_flags("v4l2_output") & OBS_OUTPUT_VIRTUALCAM)
+			virtualCam = obs_output_create("v4l2_output",
+						       "virtualcam_output",
+						       nullptr, nullptr);
+
+		if (obs_get_output_flags("pw_vcam_output") &
+		    OBS_OUTPUT_VIRTUALCAM) {
+			if (!virtualCam) {
+				virtualCam = obs_output_create(
+					"pw_vcam_output", "virtualcam_output",
+					nullptr, nullptr);
+			} else {
+				virtualCam2 =
+					obs_output_create("pw_vcam_output",
+							  "virtualcam_output_2",
+							  nullptr, nullptr);
+			}
+		}
 #endif
 		obs_output_release(virtualCam);
 		if (virtualCam2) {

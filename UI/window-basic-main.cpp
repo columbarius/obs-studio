@@ -1792,6 +1792,9 @@ void OBSBasic::OBSInit()
 #else
 	if (obs_get_output_flags("v4l2_output") & OBS_OUTPUT_VIRTUALCAM)
 		vcamEnabled = true;
+
+	if (obs_get_output_flags("pw_vcam_output") & OBS_OUTPUT_VIRTUALCAM)
+		vcamEnabled = true;
 #endif
 
 	if (vcamEnabled) {
