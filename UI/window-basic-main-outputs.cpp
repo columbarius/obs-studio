@@ -173,6 +173,24 @@ static void OBSStopVirtualCam(void *data, calldata_t *params)
 	UNUSED_PARAMETER(params);
 }
 
+static void OBSStartVirtualCam2(void *data, calldata_t *params)
+{
+	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
+
+	obs_output_start(output->virtualCam);
+
+	UNUSED_PARAMETER(params);
+}
+
+static void OBSStopVirtualCam2(void *data, calldata_t *params)
+{
+	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
+
+	obs_output_stop(output->virtualCam);
+
+	UNUSED_PARAMETER(params);
+}
+
 /* ------------------------------------------------------------------------ */
 
 static bool CreateAACEncoder(OBSEncoder &res, string &id, int bitrate,
@@ -213,6 +231,16 @@ inline BasicOutputHandler::BasicOutputHandler(OBSBasic *main_) : main(main_)
 			"v4l2_output", "virtualcam_output", nullptr, nullptr);
 #endif
 		obs_output_release(virtualCam);
+		if (virtualCam2) {
+			obs_output_release(virtualCam2);
+
+			signal_handler_t *signal2 =
+				obs_output_get_signal_handler(virtualCam2);
+			startVirtualCam2.Connect(signal2, "start",
+						 OBSStartVirtualCam2, this);
+			stopVirtualCam2.Connect(signal2, "stop",
+						OBSStopVirtualCam2, this);
+		}
 
 		signal_handler_t *signal =
 			obs_output_get_signal_handler(virtualCam);
@@ -227,8 +255,15 @@ bool BasicOutputHandler::StartVirtualCam()
 	if (main->vcamEnabled) {
 		obs_output_set_media(virtualCam, obs_get_video(),
 				     obs_get_audio());
+		if (virtualCam2)
+			obs_output_set_media(virtualCam2, obs_get_video(),
+					     obs_get_audio());
+
 		if (!Active())
 			SetupOutputs();
+
+		if (virtualCam2)
+			return obs_output_start(virtualCam2);
 
 		return obs_output_start(virtualCam);
 	}
@@ -238,6 +273,11 @@ bool BasicOutputHandler::StartVirtualCam()
 void BasicOutputHandler::StopVirtualCam()
 {
 	if (main->vcamEnabled) {
+		if (virtualCam2) {
+			obs_output_stop(virtualCam2);
+			return;
+		}
+
 		obs_output_stop(virtualCam);
 	}
 }
@@ -245,6 +285,10 @@ void BasicOutputHandler::StopVirtualCam()
 bool BasicOutputHandler::VirtualCamActive() const
 {
 	if (main->vcamEnabled) {
+		if (virtualCam2)
+			return obs_output_active(virtualCam) ||
+			       obs_output_active(virtualCam2);
+
 		return obs_output_active(virtualCam);
 	}
 	return false;
