@@ -818,6 +818,35 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 
 	obs_properties_destroy(ppts);
 
+#ifdef __linux__
+	// Check if there is dual virtual cameras
+	obs_data_t *obsData = obs_get_private_data();
+	dualVirtualCams = obs_data_get_bool(obsData, "dualVirtualCams");
+	obs_data_release(obsData);
+
+	if (dualVirtualCams) {
+		HookWidget(ui->virtualCamSelect, COMBO_CHANGED, ADV_RESTART);
+
+		ui->virtualCamSelect->blockSignals(true);
+		ui->virtualCamSelect->addItem(
+			QTStr("Basic.Settings.Advanced.VirtualCam.UseBoth.Linux"),
+			"UseBoth");
+		ui->virtualCamSelect->addItem(
+			QT_UTF8(obs_output_get_display_name("v4l2_output")),
+			"v4l2_output");
+		ui->virtualCamSelect->addItem(
+			QT_UTF8(obs_output_get_display_name("pw_vcam_output")),
+			"pw_vcam_output");
+		ui->virtualCamSelect->blockSignals(false);
+	} else {
+		delete ui->advVirtualCamGroupBox;
+		ui->advVirtualCamGroupBox = nullptr;
+	}
+#else
+	delete ui->advVirtualCamGroupBox;
+	ui->advVirtualCamGroupBox = nullptr;
+#endif
+
 	InitStreamPage();
 	LoadSettings(false);
 
@@ -2510,6 +2539,8 @@ void OBSBasicSettings::LoadAdvancedSettings()
 		App()->GlobalConfig(), "General", "HotkeyFocusType");
 	bool dynBitrate =
 		config_get_bool(main->Config(), "Output", "DynamicBitrate");
+	const char *virtualCamType =
+		config_get_string(main->Config(), "VirtualCam", "Type");
 
 	bool confirmOnExit =
 		config_get_bool(GetGlobalConfig(), "General", "ConfirmOnExit");
@@ -2550,8 +2581,22 @@ void OBSBasicSettings::LoadAdvancedSettings()
 	if (!SetComboByValue(ui->bindToIP, bindIP))
 		SetInvalidValue(ui->bindToIP, bindIP, bindIP);
 
+	if (dualVirtualCams) {
+		if (virtualCamType) {
+			if (!SetComboByValue(ui->virtualCamSelect,
+					     virtualCamType))
+				SetInvalidValue(ui->virtualCamSelect,
+						virtualCamType, virtualCamType);
+		} else {
+			SetComboByValue(ui->virtualCamSelect, "UseBoth");
+		}
+	}
+
 	if (obs_video_active()) {
 		ui->advancedVideoContainer->setEnabled(false);
+
+		if (dualVirtualCams)
+			ui->advVirtualCamGroupBox->setEnabled(false);
 	}
 
 #ifdef __APPLE__
@@ -5006,6 +5051,13 @@ void OBSBasicSettings::on_disableOSXVSync_clicked()
 		ui->resetOSXVSync->setEnabled(disable);
 	}
 #endif
+}
+
+void OBSBasicSettings::on_virtualCamSelect_currentIndexChanged(int idx)
+{
+	UNUSED_PARAMETER(idx);
+	config_set_string(main->Config(), "VirtualCam", "Type",
+			  QT_TO_UTF8(GetComboData(ui->virtualCamSelect)));
 }
 
 QIcon OBSBasicSettings::GetGeneralIcon() const
