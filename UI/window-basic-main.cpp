@@ -7379,7 +7379,9 @@ void OBSBasic::StartVirtualCam()
 
 	SaveProject();
 
-	if (!outputHandler->StartVirtualCam()) {
+	if (outputHandler->StartVirtualCam()) {
+		vcamButton->setEnabled(false);
+	} else {
 		vcamButton->setChecked(false);
 	}
 }
@@ -7406,6 +7408,7 @@ void OBSBasic::OnVirtualCamStart()
 	if (sysTrayVirtualCam)
 		sysTrayVirtualCam->setText(QTStr("Basic.Main.StopVirtualCam"));
 	vcamButton->setChecked(true);
+	vcamButton->setEnabled(true);
 
 	if (api)
 		api->on_event(OBS_FRONTEND_EVENT_VIRTUALCAM_STARTED);
