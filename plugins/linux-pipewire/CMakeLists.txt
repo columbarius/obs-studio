@@ -34,12 +34,14 @@ add_definitions(
 set(linux-pipewire_SOURCES
 	linux-pipewire.c
 	pipewire-common.c
+	pipewire-virtualcam.c
 	pipewire.c
 	pipewire-capture.c
 	portal.c
 )
 set(linux-pipewire_HEADERS
 	pipewire-common.h
+	pipewire-virtualcam.h
 	pipewire.h
 	pipewire-capture.h
 	portal.h
