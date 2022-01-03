@@ -168,35 +168,45 @@ static const struct {
 	uint32_t spa_format;
 	uint32_t drm_format;
 	enum gs_color_format gs_format;
+	enum video_format video_format;
 	bool swap_red_blue;
+	uint32_t bpp;
 	const char *pretty_name;
 } supported_formats[] = {
 	{
 		SPA_VIDEO_FORMAT_BGRA,
 		DRM_FORMAT_ARGB8888,
 		GS_BGRA,
+		VIDEO_FORMAT_BGRA,
 		false,
+		4,
 		"ARGB8888",
 	},
 	{
 		SPA_VIDEO_FORMAT_RGBA,
 		DRM_FORMAT_ABGR8888,
 		GS_RGBA,
+		VIDEO_FORMAT_RGBA,
 		false,
+		4,
 		"ABGR8888",
 	},
 	{
 		SPA_VIDEO_FORMAT_BGRx,
 		DRM_FORMAT_XRGB8888,
 		GS_BGRX,
+		VIDEO_FORMAT_BGRX,
 		false,
+		4,
 		"XRGB8888",
 	},
 	{
 		SPA_VIDEO_FORMAT_RGBx,
 		DRM_FORMAT_XBGR8888,
 		GS_BGRX,
+		VIDEO_FORMAT_NONE,
 		true,
+		4,
 		"XBGR8888",
 	},
 };
@@ -215,9 +225,12 @@ static const uint32_t supported_texture_spa_formats[] = {
 	(sizeof(supported_texture_spa_formats) / \
 	 sizeof(supported_texture_spa_formats[0]))
 
-static bool lookup_format_info_from_spa_format(
-	uint32_t spa_format, uint32_t *out_drm_format,
-	enum gs_color_format *out_gs_format, bool *out_swap_red_blue)
+static bool
+lookup_format_info_from_spa_format(uint32_t spa_format,
+				   uint32_t *out_drm_format,
+				   enum gs_color_format *out_gs_format,
+				   enum video_format *out_video_format,
+				   bool *out_swap_red_blue, uint32_t *out_bpp)
 {
 	for (size_t i = 0; i < N_SUPPORTED_FORMATS; i++) {
 		if (supported_formats[i].spa_format != spa_format)
@@ -227,8 +240,12 @@ static bool lookup_format_info_from_spa_format(
 			*out_drm_format = supported_formats[i].drm_format;
 		if (out_gs_format)
 			*out_gs_format = supported_formats[i].gs_format;
+		if (out_video_format)
+			*out_video_format = supported_formats[i].video_format;
 		if (out_swap_red_blue)
 			*out_swap_red_blue = supported_formats[i].swap_red_blue;
+		if (out_bpp)
+			*out_bpp = supported_formats[i].bpp;
 		return true;
 	}
 	return false;
@@ -374,7 +391,7 @@ static void init_format_info_texture(obs_pipewire_data *obs_pw)
 		uint32_t drm_format,
 			spa_format = supported_texture_spa_formats[i];
 		if (!lookup_format_info_from_spa_format(spa_format, &drm_format,
-							NULL, NULL))
+							NULL, NULL, NULL, NULL))
 			continue;
 
 		if (!drm_format_available(drm_format, drm_formats,
@@ -530,7 +547,7 @@ static void on_process_texture_cb(void *user_data)
 
 		if (!lookup_format_info_from_spa_format(
 			    obs_pw->format.info.raw.format, &drm_format, NULL,
-			    NULL)) {
+			    NULL, NULL, NULL)) {
 			blog(LOG_ERROR,
 			     "[pipewire] unsupported DMA buffer format: %d",
 			     obs_pw->format.info.raw.format);
@@ -576,7 +593,7 @@ static void on_process_texture_cb(void *user_data)
 
 		if (!lookup_format_info_from_spa_format(
 			    obs_pw->format.info.raw.format, NULL, &gs_format,
-			    &swap_red_blue)) {
+			    NULL, &swap_red_blue, NULL)) {
 			blog(LOG_ERROR,
 			     "[pipewire] unsupported DMA buffer format: %d",
 			     obs_pw->format.info.raw.format);
@@ -633,8 +650,9 @@ read_metadata:
 
 		if (bitmap && bitmap->size.width > 0 &&
 		    bitmap->size.height > 0 &&
-		    lookup_format_info_from_spa_format(
-			    bitmap->format, NULL, &gs_format, &swap_red_blue)) {
+		    lookup_format_info_from_spa_format(bitmap->format, NULL,
+						       &gs_format, NULL,
+						       &swap_red_blue, NULL)) {
 			const uint8_t *bitmap_data;
 
 			bitmap_data =
