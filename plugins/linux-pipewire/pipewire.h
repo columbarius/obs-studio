@@ -35,12 +35,13 @@ enum obs_import_type {
 typedef struct _obs_pipewire_stream_data obs_pipewire_stream_data;
 
 extern const struct pw_stream_events stream_events_texture;
+extern const struct pw_stream_events stream_events_media;
 
 obs_pipewire_stream_data *
 obs_pipewire_stream_create(int pipewire_fd, int pipewire_node, const char *name,
 			   struct pw_properties *props,
 			   const struct pw_stream_events *stream_events,
-			   enum obs_import_type type);
+			   enum obs_import_type type, obs_source_t *source);
 void obs_pipewire_stream_destroy(obs_pipewire_stream_data *obs_pw);
 
 void obs_pipewire_stream_show(obs_pipewire_stream_data *obs_pw);

@@ -250,7 +250,7 @@ static void on_pipewire_remote_opened_cb(GObject *source, GAsyncResult *res,
 		pw_properties_new(PW_KEY_MEDIA_TYPE, "Video",
 				  PW_KEY_MEDIA_CATEGORY, "Capture",
 				  PW_KEY_MEDIA_ROLE, "Screen", NULL),
-		&stream_events, IMPORT_API_TEXTURE);
+		&stream_events_texture, IMPORT_API_TEXTURE, NULL);
 	obs_pipewire_stream_set_cursor_visible(capture->obs_pw,
 					       capture->cursor_visible);
 }
