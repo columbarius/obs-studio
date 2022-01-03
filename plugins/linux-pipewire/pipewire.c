@@ -1088,8 +1088,7 @@ fail:
 
 obs_pipewire_data *obs_pipewire_new_full(struct pw_core *core,
 					 struct pw_properties *stream_props,
-					 uint32_t node,
-					 obs_source_t *source)
+					 uint32_t node, obs_source_t *source)
 {
 	obs_pipewire_data *obs_pw;
 
