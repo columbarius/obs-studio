@@ -469,8 +469,11 @@ static void init_format_info_texture(obs_pipewire_data *obs_pw)
 		struct format_info *info;
 		uint32_t drm_format,
 			spa_format = supported_texture_spa_formats[i];
+		enum gs_color_format gs_format;
 		if (!lookup_format_info_from_spa_format(spa_format, &drm_format,
-							NULL, NULL, NULL, NULL))
+							&gs_format, NULL, NULL,
+							NULL) ||
+		    gs_format == GS_UNKNOWN)
 			continue;
 
 		if (!drm_format_available(drm_format, drm_formats,
