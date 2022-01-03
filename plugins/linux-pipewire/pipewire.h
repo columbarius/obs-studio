@@ -27,14 +27,20 @@
 
 /* PipeWire Streams */
 
+enum obs_import_type {
+	IMPORT_API_TEXTURE,
+	IMPORT_API_MEDIA,
+};
+
 typedef struct _obs_pipewire_stream_data obs_pipewire_stream_data;
 
-extern const struct pw_stream_events stream_events;
+extern const struct pw_stream_events stream_events_texture;
 
 obs_pipewire_stream_data *
 obs_pipewire_stream_create(int pipewire_fd, int pipewire_node, const char *name,
 			   struct pw_properties *props,
-			   const struct pw_stream_events *stream_events);
+			   const struct pw_stream_events *stream_events,
+			   enum obs_import_type type);
 void obs_pipewire_stream_destroy(obs_pipewire_stream_data *obs_pw);
 
 void obs_pipewire_stream_show(obs_pipewire_stream_data *obs_pw);

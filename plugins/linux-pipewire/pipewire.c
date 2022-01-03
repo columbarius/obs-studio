@@ -166,6 +166,8 @@ struct _obs_pipewire_stream_data {
 	struct spa_hook stream_listener;
 	struct spa_source *reneg;
 
+	enum obs_import_type import_type;
+
 	struct spa_video_info format;
 
 	gs_texture_t *texture;
@@ -269,6 +271,17 @@ static const struct {
 
 #define N_SUPPORTED_FORMATS \
 	(sizeof(supported_formats) / sizeof(supported_formats[0]))
+
+static const uint32_t supported_texture_spa_formats[] = {
+	SPA_VIDEO_FORMAT_BGRA,
+	SPA_VIDEO_FORMAT_RGBA,
+	SPA_VIDEO_FORMAT_BGRx,
+	SPA_VIDEO_FORMAT_RGBx,
+};
+
+#define N_SUPPORTED_TEXTURE_FORMATS              \
+	(sizeof(supported_texture_spa_formats) / \
+	 sizeof(supported_texture_spa_formats[0]))
 
 static bool lookup_format_info_from_spa_format(
 	uint32_t spa_format, uint32_t *out_drm_format,
@@ -411,7 +424,7 @@ static bool drm_format_available(uint32_t drm_format, uint32_t *drm_formats,
 	return false;
 }
 
-static void init_format_info(obs_pipewire_stream_data *obs_pw)
+static void init_format_info_texture(obs_pipewire_stream_data *obs_pw)
 {
 	da_init(obs_pw->format_info);
 
@@ -424,26 +437,30 @@ static void init_format_info(obs_pipewire_stream_data *obs_pw)
 	bool capabilities_queried = gs_query_dmabuf_capabilities(
 		&dmabuf_flags, &drm_formats, &n_drm_formats);
 
-	for (size_t i = 0; i < N_SUPPORTED_FORMATS; i++) {
+	for (size_t i = 0; i < N_SUPPORTED_TEXTURE_FORMATS; i++) {
 		struct format_info *info;
+		uint32_t drm_format,
+			spa_format = supported_texture_spa_formats[i];
+		if (!lookup_format_info_from_spa_format(spa_format, &drm_format,
+							NULL, NULL))
+			continue;
 
-		if (!drm_format_available(supported_formats[i].drm_format,
-					  drm_formats, n_drm_formats))
+		if (!drm_format_available(drm_format, drm_formats,
+					  n_drm_formats))
 			continue;
 
 		info = da_push_back_new(obs_pw->format_info);
 		da_init(info->modifiers);
-		info->spa_format = supported_formats[i].spa_format;
-		info->drm_format = supported_formats[i].drm_format;
+		info->spa_format = spa_format;
+		info->drm_format = drm_format;
 
 		if (!capabilities_queried)
 			continue;
 
 		size_t n_modifiers;
 		uint64_t *modifiers = NULL;
-		if (gs_query_dmabuf_modifiers_for_format(
-			    supported_formats[i].drm_format, &modifiers,
-			    &n_modifiers)) {
+		if (gs_query_dmabuf_modifiers_for_format(drm_format, &modifiers,
+							 &n_modifiers)) {
 			da_push_back_array(info->modifiers, modifiers,
 					   n_modifiers);
 		}
@@ -458,6 +475,18 @@ static void init_format_info(obs_pipewire_stream_data *obs_pw)
 	obs_leave_graphics();
 
 	bfree(drm_formats);
+}
+
+static void init_format_info(obs_pipewire_stream_data *obs_pw)
+{
+	switch (obs_pw->import_type) {
+	case IMPORT_API_TEXTURE:
+		init_format_info_texture(obs_pw);
+		break;
+	default:
+		blog(LOG_ERROR, "[pipewire] Unsuported import_type");
+		abort();
+	}
 }
 
 static void clear_format_info(obs_pipewire_stream_data *obs_pw)
@@ -519,7 +548,7 @@ static void renegotiate_format(void *data, uint64_t expirations)
 
 /* ------------------------------------------------- */
 
-static void on_process_cb(void *user_data)
+static void on_process_texture_cb(void *user_data)
 {
 	obs_pipewire_stream_data *obs_pw = user_data;
 	struct spa_meta_cursor *cursor;
@@ -783,11 +812,11 @@ static void on_state_changed_cb(void *user_data, enum pw_stream_state old,
 	     error ? error : "none");
 }
 
-const struct pw_stream_events stream_events = {
+const struct pw_stream_events stream_events_texture = {
 	PW_VERSION_STREAM_EVENTS,
 	.state_changed = on_state_changed_cb,
 	.param_changed = on_param_changed_cb,
-	.process = on_process_cb,
+	.process = on_process_texture_cb,
 };
 
 static void play_pipewire_stream(obs_pipewire_stream_data *obs_pw,
@@ -868,13 +897,15 @@ static void play_pipewire_stream(obs_pipewire_stream_data *obs_pw,
 obs_pipewire_stream_data *
 obs_pipewire_stream_create(int pipewire_fd, int pipewire_node, const char *name,
 			   struct pw_properties *props,
-			   const struct pw_stream_events *stream_events)
+			   const struct pw_stream_events *stream_events,
+			   enum obs_import_type import_type)
 {
 	obs_pipewire_stream_data *obs_pw =
 		bzalloc(sizeof(obs_pipewire_stream_data));
 
 	obs_pw->pipewire_fd = pipewire_fd;
 	obs_pw->pipewire_node = pipewire_node;
+	obs_pw->import_type = import_type;
 
 	init_format_info(obs_pw);
 	play_pipewire_stream(obs_pw, name, props, stream_events);
