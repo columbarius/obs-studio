@@ -465,6 +465,7 @@ static void on_process_cb(void *user_data)
 	struct spa_buffer *buffer;
 	struct pw_buffer *b;
 	bool swap_red_blue = false;
+	bool has_buffer = true;
 
 	/* Find the most recent buffer */
 	b = NULL;
@@ -488,9 +489,14 @@ static void on_process_cb(void *user_data)
 		if (header->flags & SPA_META_HEADER_FLAG_CORRUPTED > 0) {
 			goto queue_buffer;
 		}
+	} else {
+		has_buffer = buffer->datas[0].chunk->size != 0;
 	}
 
 	obs_enter_graphics();
+
+	if (!has_buffer)
+		goto read_metadata;
 
 	if (buffer->datas[0].type == SPA_DATA_DmaBuf) {
 		uint32_t planes = buffer->n_datas;
