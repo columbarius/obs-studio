@@ -719,7 +719,7 @@ static void on_state_changed_cb(void *user_data, enum pw_stream_state old,
 	     error ? error : "none");
 }
 
-static const struct pw_stream_events stream_events = {
+const struct pw_stream_events stream_events = {
 	PW_VERSION_STREAM_EVENTS,
 	.state_changed = on_state_changed_cb,
 	.param_changed = on_param_changed_cb,
@@ -762,7 +762,8 @@ static const struct pw_core_events core_events = {
 };
 
 static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
-				 struct pw_properties *props)
+				 struct pw_properties *props,
+				 const struct pw_stream_events *stream_events)
 {
 	struct spa_pod_builder pod_builder;
 	const struct spa_pod **params = NULL;
@@ -807,7 +808,7 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
 	/* Stream */
 	obs_pw->stream = pw_stream_new(obs_pw->core, name, props);
 	pw_stream_add_listener(obs_pw->stream, &obs_pw->stream_listener,
-			       &stream_events, obs_pw);
+			       stream_events, obs_pw);
 	blog(LOG_INFO, "[pipewire] Created stream %p", obs_pw->stream);
 
 	/* Stream parameters */
@@ -836,7 +837,8 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
 /* obs_source_info methods */
 
 void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
-			  struct pw_properties *props)
+			  struct pw_properties *props,
+			  const struct pw_stream_events *stream_events)
 {
 	obs_pipewire_data *obs_pw = bzalloc(sizeof(obs_pipewire_data));
 
@@ -844,7 +846,7 @@ void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
 	obs_pw->pipewire_node = pipewire_node;
 
 	init_format_info(obs_pw);
-	play_pipewire_stream(obs_pw, name, props);
+	play_pipewire_stream(obs_pw, name, props, stream_events);
 
 	return obs_pw;
 }

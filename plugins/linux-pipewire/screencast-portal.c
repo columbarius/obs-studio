@@ -249,7 +249,8 @@ static void on_pipewire_remote_opened_cb(GObject *source, GAsyncResult *res,
 		pipewire_fd, capture->pipewire_node, "OBS Studio",
 		pw_properties_new(PW_KEY_MEDIA_TYPE, "Video",
 				  PW_KEY_MEDIA_CATEGORY, "Capture",
-				  PW_KEY_MEDIA_ROLE, "Screen", NULL));
+				  PW_KEY_MEDIA_ROLE, "Screen", NULL),
+		&stream_events);
 	obs_pipewire_set_cursor_visible(capture->obs_pw,
 					capture->cursor_visible);
 }

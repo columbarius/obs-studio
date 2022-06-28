@@ -27,8 +27,11 @@
 
 typedef struct _obs_pipewire_data obs_pipewire_data;
 
+extern const struct pw_stream_events stream_events;
+
 void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
-			  struct pw_properties *props);
+			  struct pw_properties *props,
+			  const struct pw_stream_events *stream_events);
 void obs_pipewire_destroy(obs_pipewire_data *obs_pw);
 
 void obs_pipewire_show(obs_pipewire_data *obs_pw);
