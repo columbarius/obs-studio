@@ -761,7 +761,8 @@ static const struct pw_core_events core_events = {
 	.error = on_core_error_cb,
 };
 
-static void play_pipewire_stream(obs_pipewire_data *obs_pw)
+static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
+				 struct pw_properties *props)
 {
 	struct spa_pod_builder pod_builder;
 	const struct spa_pod **params = NULL;
@@ -804,11 +805,7 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw)
 	pw_thread_loop_wait(obs_pw->thread_loop);
 
 	/* Stream */
-	obs_pw->stream = pw_stream_new(
-		obs_pw->core, "OBS Studio",
-		pw_properties_new(PW_KEY_MEDIA_TYPE, "Video",
-				  PW_KEY_MEDIA_CATEGORY, "Capture",
-				  PW_KEY_MEDIA_ROLE, "Screen", NULL));
+	obs_pw->stream = pw_stream_new(obs_pw->core, name, props);
 	pw_stream_add_listener(obs_pw->stream, &obs_pw->stream_listener,
 			       &stream_events, obs_pw);
 	blog(LOG_INFO, "[pipewire] Created stream %p", obs_pw->stream);
@@ -838,7 +835,8 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw)
 
 /* obs_source_info methods */
 
-void *obs_pipewire_create(int pipewire_fd, int pipewire_node)
+void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
+			  struct pw_properties *props)
 {
 	obs_pipewire_data *obs_pw = bzalloc(sizeof(obs_pipewire_data));
 
@@ -846,7 +844,7 @@ void *obs_pipewire_create(int pipewire_fd, int pipewire_node)
 	obs_pw->pipewire_node = pipewire_node;
 
 	init_format_info(obs_pw);
-	play_pipewire_stream(obs_pw);
+	play_pipewire_stream(obs_pw, name, props);
 
 	return obs_pw;
 }
