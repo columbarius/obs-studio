@@ -46,6 +46,26 @@ struct obs_pw_version {
 	int micro;
 };
 
+typedef struct _obs_pipewire_data obs_pipewire_data;
+
+// This struct contains the shared fields between all obs_pipewire wrappers
+// The C Standard guarantees that the memory layout off these parts of the
+// struct are identical and as such we can cast any extended struct to this
+// and use the fields without issues. Any change here has to be added to the
+// extended structs and the order of fields has to be preserved.
+struct _obs_pipewire_data {
+	int pipewire_fd;
+
+	struct pw_thread_loop *thread_loop;
+	struct pw_context *context;
+
+	struct pw_core *core;
+	struct spa_hook core_listener;
+	int server_version_sync;
+
+	struct obs_pw_version server_version;
+};
+
 /* auxiliary methods */
 
 static bool parse_pw_version(struct obs_pw_version *dst, const char *version)
@@ -78,6 +98,41 @@ static void update_pw_versions(struct obs_pw_version *pw_server_version,
 		blog(LOG_WARNING, "[pipewire] failed to parse server version");
 }
 
+static void on_core_info_cb(void *user_data, const struct pw_core_info *info)
+{
+	obs_pipewire_data *obs_pw = user_data;
+
+	update_pw_versions(&obs_pw->server_version, info->version);
+}
+
+static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res,
+			     const char *message)
+{
+	UNUSED_PARAMETER(seq);
+
+	obs_pipewire_data *obs_pw = user_data;
+
+	blog(LOG_ERROR, "[pipewire] Error id:%u seq:%d res:%d (%s): %s", id,
+	     seq, res, g_strerror(res), message);
+
+	pw_thread_loop_signal(obs_pw->thread_loop, FALSE);
+}
+
+static void on_core_done_cb(void *user_data, uint32_t id, int seq)
+{
+	obs_pipewire_data *obs_pw = user_data;
+
+	if (id == PW_ID_CORE && obs_pw->server_version_sync == seq)
+		pw_thread_loop_signal(obs_pw->thread_loop, FALSE);
+}
+
+static const struct pw_core_events core_events = {
+	PW_VERSION_CORE_EVENTS,
+	.info = on_core_info_cb,
+	.done = on_core_done_cb,
+	.error = on_core_error_cb,
+};
+
 /* PipeWire stream */
 
 #define CURSOR_META_SIZE(width, height)                                    \
@@ -91,10 +146,8 @@ struct format_info {
 };
 
 struct _obs_pipewire_stream_data {
-	uint32_t pipewire_node;
+	// Shared fields from _obs_pipewire_data
 	int pipewire_fd;
-
-	gs_texture_t *texture;
 
 	struct pw_thread_loop *thread_loop;
 	struct pw_context *context;
@@ -105,11 +158,17 @@ struct _obs_pipewire_stream_data {
 
 	struct obs_pw_version server_version;
 
+	// Custom fields
+
+	uint32_t pipewire_node;
+
 	struct pw_stream *stream;
 	struct spa_hook stream_listener;
 	struct spa_source *reneg;
 
 	struct spa_video_info format;
+
+	gs_texture_t *texture;
 
 	struct {
 		bool valid;
@@ -729,41 +788,6 @@ const struct pw_stream_events stream_events = {
 	.state_changed = on_state_changed_cb,
 	.param_changed = on_param_changed_cb,
 	.process = on_process_cb,
-};
-
-static void on_core_info_cb(void *user_data, const struct pw_core_info *info)
-{
-	obs_pipewire_stream_data *obs_pw = user_data;
-
-	update_pw_versions(&obs_pw->server_version, info->version);
-}
-
-static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res,
-			     const char *message)
-{
-	UNUSED_PARAMETER(seq);
-
-	obs_pipewire_stream_data *obs_pw = user_data;
-
-	blog(LOG_ERROR, "[pipewire] Error id:%u seq:%d res:%d (%s): %s", id,
-	     seq, res, g_strerror(res), message);
-
-	pw_thread_loop_signal(obs_pw->thread_loop, FALSE);
-}
-
-static void on_core_done_cb(void *user_data, uint32_t id, int seq)
-{
-	obs_pipewire_stream_data *obs_pw = user_data;
-
-	if (id == PW_ID_CORE && obs_pw->server_version_sync == seq)
-		pw_thread_loop_signal(obs_pw->thread_loop, FALSE);
-}
-
-static const struct pw_core_events core_events = {
-	PW_VERSION_CORE_EVENTS,
-	.info = on_core_info_cb,
-	.done = on_core_done_cb,
-	.error = on_core_error_cb,
 };
 
 static void play_pipewire_stream(obs_pipewire_stream_data *obs_pw,
