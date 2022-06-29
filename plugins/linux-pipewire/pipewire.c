@@ -40,15 +40,49 @@
 #define SPA_POD_PROP_FLAG_DONT_FIXATE (1 << 4)
 #endif
 
-#define CURSOR_META_SIZE(width, height)                                    \
-	(sizeof(struct spa_meta_cursor) + sizeof(struct spa_meta_bitmap) + \
-	 width * height * 4)
-
 struct obs_pw_version {
 	int major;
 	int minor;
 	int micro;
 };
+
+/* auxiliary methods */
+
+static bool parse_pw_version(struct obs_pw_version *dst, const char *version)
+{
+	int n_matches = sscanf(version, "%d.%d.%d", &dst->major, &dst->minor,
+			       &dst->micro);
+	return n_matches == 3;
+}
+
+static bool check_pw_version(const struct obs_pw_version *pw_version, int major,
+			     int minor, int micro)
+{
+	if (pw_version->major != major)
+		return pw_version->major > major;
+	if (pw_version->minor != minor)
+		return pw_version->minor > minor;
+	return pw_version->micro >= micro;
+}
+
+static void update_pw_versions(struct obs_pw_version *pw_server_version,
+			       const char *version)
+{
+	blog(LOG_INFO, "[pipewire] Server version: %s", version);
+	blog(LOG_INFO, "[pipewire] Library version: %s",
+	     pw_get_library_version());
+	blog(LOG_INFO, "[pipewire] Header version: %s",
+	     pw_get_headers_version());
+
+	if (!parse_pw_version(pw_server_version, version))
+		blog(LOG_WARNING, "[pipewire] failed to parse server version");
+}
+
+/* PipeWire stream */
+
+#define CURSOR_META_SIZE(width, height)                                    \
+	(sizeof(struct spa_meta_cursor) + sizeof(struct spa_meta_bitmap) + \
+	 width * height * 4)
 
 struct format_info {
 	uint32_t spa_format;
@@ -99,36 +133,6 @@ struct _obs_pipewire_stream_data {
 };
 
 /* auxiliary methods */
-
-static bool parse_pw_version(struct obs_pw_version *dst, const char *version)
-{
-	int n_matches = sscanf(version, "%d.%d.%d", &dst->major, &dst->minor,
-			       &dst->micro);
-	return n_matches == 3;
-}
-
-static bool check_pw_version(const struct obs_pw_version *pw_version, int major,
-			     int minor, int micro)
-{
-	if (pw_version->major != major)
-		return pw_version->major > major;
-	if (pw_version->minor != minor)
-		return pw_version->minor > minor;
-	return pw_version->micro >= micro;
-}
-
-static void update_pw_versions(obs_pipewire_stream_data *obs_pw,
-			       const char *version)
-{
-	blog(LOG_INFO, "[pipewire] Server version: %s", version);
-	blog(LOG_INFO, "[pipewire] Library version: %s",
-	     pw_get_library_version());
-	blog(LOG_INFO, "[pipewire] Header version: %s",
-	     pw_get_headers_version());
-
-	if (!parse_pw_version(&obs_pw->server_version, version))
-		blog(LOG_WARNING, "[pipewire] failed to parse server version");
-}
 
 static void teardown_pipewire_stream(obs_pipewire_stream_data *obs_pw)
 {
@@ -731,7 +735,7 @@ static void on_core_info_cb(void *user_data, const struct pw_core_info *info)
 {
 	obs_pipewire_stream_data *obs_pw = user_data;
 
-	update_pw_versions(obs_pw, info->version);
+	update_pw_versions(&obs_pw->server_version, info->version);
 }
 
 static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res,
