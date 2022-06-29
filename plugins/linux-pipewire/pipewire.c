@@ -56,7 +56,7 @@ struct format_info {
 	DARRAY(uint64_t) modifiers;
 };
 
-struct _obs_pipewire_data {
+struct _obs_pipewire_stream_data {
 	uint32_t pipewire_node;
 	int pipewire_fd;
 
@@ -117,7 +117,8 @@ static bool check_pw_version(const struct obs_pw_version *pw_version, int major,
 	return pw_version->micro >= micro;
 }
 
-static void update_pw_versions(obs_pipewire_data *obs_pw, const char *version)
+static void update_pw_versions(obs_pipewire_stream_data *obs_pw,
+			       const char *version)
 {
 	blog(LOG_INFO, "[pipewire] Server version: %s", version);
 	blog(LOG_INFO, "[pipewire] Library version: %s",
@@ -129,7 +130,7 @@ static void update_pw_versions(obs_pipewire_data *obs_pw, const char *version)
 		blog(LOG_WARNING, "[pipewire] failed to parse server version");
 }
 
-static void teardown_pipewire(obs_pipewire_data *obs_pw)
+static void teardown_pipewire_stream(obs_pipewire_stream_data *obs_pw)
 {
 	if (obs_pw->thread_loop) {
 		pw_thread_loop_wait(obs_pw->thread_loop);
@@ -150,7 +151,7 @@ static void teardown_pipewire(obs_pipewire_data *obs_pw)
 	obs_pw->negotiated = false;
 }
 
-static void destroy_session(obs_pipewire_data *obs_pw)
+static void destroy_stream_session(obs_pipewire_stream_data *obs_pw)
 {
 	obs_enter_graphics();
 	g_clear_pointer(&obs_pw->cursor.texture, gs_texture_destroy);
@@ -158,7 +159,7 @@ static void destroy_session(obs_pipewire_data *obs_pw)
 	obs_leave_graphics();
 }
 
-static inline bool has_effective_crop(obs_pipewire_data *obs_pw)
+static inline bool has_effective_crop(obs_pipewire_stream_data *obs_pw)
 {
 	return obs_pw->crop.valid &&
 	       (obs_pw->crop.x != 0 || obs_pw->crop.y != 0 ||
@@ -294,7 +295,7 @@ static inline struct spa_pod *build_format(struct spa_pod_builder *b,
 	return spa_pod_builder_pop(b, &format_frame);
 }
 
-static bool build_format_params(obs_pipewire_data *obs_pw,
+static bool build_format_params(obs_pipewire_stream_data *obs_pw,
 				struct spa_pod_builder *pod_builder,
 				const struct spa_pod ***param_list,
 				uint32_t *n_params)
@@ -347,7 +348,7 @@ static bool drm_format_available(uint32_t drm_format, uint32_t *drm_formats,
 	return false;
 }
 
-static void init_format_info(obs_pipewire_data *obs_pw)
+static void init_format_info(obs_pipewire_stream_data *obs_pw)
 {
 	da_init(obs_pw->format_info);
 
@@ -396,7 +397,7 @@ static void init_format_info(obs_pipewire_data *obs_pw)
 	bfree(drm_formats);
 }
 
-static void clear_format_info(obs_pipewire_data *obs_pw)
+static void clear_format_info(obs_pipewire_stream_data *obs_pw)
 {
 	for (size_t i = 0; i < obs_pw->format_info.num; i++) {
 		da_free(obs_pw->format_info.array[i].modifiers);
@@ -404,7 +405,7 @@ static void clear_format_info(obs_pipewire_data *obs_pw)
 	da_free(obs_pw->format_info);
 }
 
-static void remove_modifier_from_format(obs_pipewire_data *obs_pw,
+static void remove_modifier_from_format(obs_pipewire_stream_data *obs_pw,
 					uint32_t spa_format, uint64_t modifier)
 {
 	for (size_t i = 0; i < obs_pw->format_info.num; i++) {
@@ -431,7 +432,7 @@ static void remove_modifier_from_format(obs_pipewire_data *obs_pw,
 static void renegotiate_format(void *data, uint64_t expirations)
 {
 	UNUSED_PARAMETER(expirations);
-	obs_pipewire_data *obs_pw = (obs_pipewire_data *)data;
+	obs_pipewire_stream_data *obs_pw = (obs_pipewire_stream_data *)data;
 	const struct spa_pod **params = NULL;
 
 	blog(LOG_INFO, "[pipewire] Renegotiating stream");
@@ -443,7 +444,7 @@ static void renegotiate_format(void *data, uint64_t expirations)
 		SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
 	uint32_t n_params;
 	if (!build_format_params(obs_pw, &pod_builder, &params, &n_params)) {
-		teardown_pipewire(obs_pw);
+		teardown_pipewire_stream(obs_pw);
 		pw_thread_loop_unlock(obs_pw->thread_loop);
 		return;
 	}
@@ -457,7 +458,7 @@ static void renegotiate_format(void *data, uint64_t expirations)
 
 static void on_process_cb(void *user_data)
 {
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 	struct spa_meta_cursor *cursor;
 	uint32_t drm_format;
 	struct spa_meta_region *region;
@@ -630,7 +631,7 @@ read_metadata:
 static void on_param_changed_cb(void *user_data, uint32_t id,
 				const struct spa_pod *param)
 {
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 	struct spa_pod_builder pod_builder;
 	const struct spa_pod *params[3];
 	uint32_t buffer_types;
@@ -712,7 +713,7 @@ static void on_state_changed_cb(void *user_data, enum pw_stream_state old,
 	UNUSED_PARAMETER(old);
 	UNUSED_PARAMETER(error);
 
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 
 	blog(LOG_INFO, "[pipewire] Stream %p state: \"%s\" (error: %s)",
 	     obs_pw->stream, pw_stream_state_as_string(state),
@@ -728,7 +729,7 @@ const struct pw_stream_events stream_events = {
 
 static void on_core_info_cb(void *user_data, const struct pw_core_info *info)
 {
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 
 	update_pw_versions(obs_pw, info->version);
 }
@@ -738,7 +739,7 @@ static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res,
 {
 	UNUSED_PARAMETER(seq);
 
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 
 	blog(LOG_ERROR, "[pipewire] Error id:%u seq:%d res:%d (%s): %s", id,
 	     seq, res, g_strerror(res), message);
@@ -748,7 +749,7 @@ static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res,
 
 static void on_core_done_cb(void *user_data, uint32_t id, int seq)
 {
-	obs_pipewire_data *obs_pw = user_data;
+	obs_pipewire_stream_data *obs_pw = user_data;
 
 	if (id == PW_ID_CORE && obs_pw->server_version_sync == seq)
 		pw_thread_loop_signal(obs_pw->thread_loop, FALSE);
@@ -761,8 +762,8 @@ static const struct pw_core_events core_events = {
 	.error = on_core_error_cb,
 };
 
-static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
-				 struct pw_properties *props,
+static void play_pipewire_stream(obs_pipewire_stream_data *obs_pw,
+				 const char *name, struct pw_properties *props,
 				 const struct pw_stream_events *stream_events)
 {
 	struct spa_pod_builder pod_builder;
@@ -819,7 +820,7 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
 
 	if (!build_format_params(obs_pw, &pod_builder, &params, &n_params)) {
 		pw_thread_loop_unlock(obs_pw->thread_loop);
-		teardown_pipewire(obs_pw);
+		teardown_pipewire_stream(obs_pw);
 		return;
 	}
 
@@ -836,11 +837,13 @@ static void play_pipewire_stream(obs_pipewire_data *obs_pw, const char *name,
 
 /* obs_source_info methods */
 
-void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
-			  struct pw_properties *props,
-			  const struct pw_stream_events *stream_events)
+obs_pipewire_stream_data *
+obs_pipewire_stream_create(int pipewire_fd, int pipewire_node, const char *name,
+			   struct pw_properties *props,
+			   const struct pw_stream_events *stream_events)
 {
-	obs_pipewire_data *obs_pw = bzalloc(sizeof(obs_pipewire_data));
+	obs_pipewire_stream_data *obs_pw =
+		bzalloc(sizeof(obs_pipewire_stream_data));
 
 	obs_pw->pipewire_fd = pipewire_fd;
 	obs_pw->pipewire_node = pipewire_node;
@@ -851,32 +854,32 @@ void *obs_pipewire_create(int pipewire_fd, int pipewire_node, const char *name,
 	return obs_pw;
 }
 
-void obs_pipewire_destroy(obs_pipewire_data *obs_pw)
+void obs_pipewire_stream_destroy(obs_pipewire_stream_data *obs_pw)
 {
 	if (!obs_pw)
 		return;
 
-	teardown_pipewire(obs_pw);
-	destroy_session(obs_pw);
+	teardown_pipewire_stream(obs_pw);
+	destroy_stream_session(obs_pw);
 
 	clear_format_info(obs_pw);
 
 	bfree(obs_pw);
 }
 
-void obs_pipewire_show(obs_pipewire_data *obs_pw)
+void obs_pipewire_stream_show(obs_pipewire_stream_data *obs_pw)
 {
 	if (obs_pw->stream)
 		pw_stream_set_active(obs_pw->stream, true);
 }
 
-void obs_pipewire_hide(obs_pipewire_data *obs_pw)
+void obs_pipewire_stream_hide(obs_pipewire_stream_data *obs_pw)
 {
 	if (obs_pw->stream)
 		pw_stream_set_active(obs_pw->stream, false);
 }
 
-uint32_t obs_pipewire_get_width(obs_pipewire_data *obs_pw)
+uint32_t obs_pipewire_stream_get_width(obs_pipewire_stream_data *obs_pw)
 {
 	if (!obs_pw->negotiated)
 		return 0;
@@ -887,7 +890,7 @@ uint32_t obs_pipewire_get_width(obs_pipewire_data *obs_pw)
 		return obs_pw->format.info.raw.size.width;
 }
 
-uint32_t obs_pipewire_get_height(obs_pipewire_data *obs_pw)
+uint32_t obs_pipewire_stream_get_height(obs_pipewire_stream_data *obs_pw)
 {
 	if (!obs_pw->negotiated)
 		return 0;
@@ -898,7 +901,8 @@ uint32_t obs_pipewire_get_height(obs_pipewire_data *obs_pw)
 		return obs_pw->format.info.raw.size.height;
 }
 
-void obs_pipewire_video_render(obs_pipewire_data *obs_pw, gs_effect_t *effect)
+void obs_pipewire_stream_video_render(obs_pipewire_stream_data *obs_pw,
+				      gs_effect_t *effect)
 {
 	gs_eparam_t *image;
 
@@ -932,8 +936,8 @@ void obs_pipewire_video_render(obs_pipewire_data *obs_pw, gs_effect_t *effect)
 	}
 }
 
-void obs_pipewire_set_cursor_visible(obs_pipewire_data *obs_pw,
-				     bool cursor_visible)
+void obs_pipewire_stream_set_cursor_visible(obs_pipewire_stream_data *obs_pw,
+					    bool cursor_visible)
 {
 	obs_pw->cursor.visible = cursor_visible;
 }
