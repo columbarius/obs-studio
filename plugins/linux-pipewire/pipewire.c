@@ -969,3 +969,250 @@ void obs_pipewire_stream_set_cursor_visible(obs_pipewire_stream_data *obs_pw,
 {
 	obs_pw->cursor.visible = cursor_visible;
 }
+
+/* PipeWire registry */
+
+typedef struct _obs_pipewire_registry_device_data
+	obs_pipewire_registry_device_data;
+typedef struct _obs_pipewire_registry_callback_data
+	obs_pipewire_registry_callback_data;
+
+struct _obs_pipewire_registry_device_data {
+	struct spa_list link;
+	obs_pipewire_registry_device device;
+};
+
+struct _obs_pipewire_registry_callback_data {
+	struct spa_list link;
+	void *user_data;
+	obs_pipewire_registry_callbacks *callbacks;
+};
+
+struct _obs_pipewire_registry_data {
+	// Shared fields from _obs_pipewire_data
+	int pipewire_fd;
+
+	struct pw_thread_loop *thread_loop;
+	struct pw_context *context;
+
+	struct pw_core *core;
+	struct spa_hook core_listener;
+	int server_version_sync;
+
+	struct obs_pw_version server_version;
+
+	// Custom fields
+
+	struct pw_registry *registry;
+	struct spa_hook registry_listener;
+
+	struct spa_list callback_data;
+
+	struct spa_list devices;
+};
+
+/* auxiliary methods */
+
+static void teardown_pipewire_registry(obs_pipewire_registry_data *obs_pw)
+{
+	if (obs_pw->thread_loop) {
+		pw_thread_loop_wait(obs_pw->thread_loop);
+		pw_thread_loop_stop(obs_pw->thread_loop);
+	}
+
+	if (obs_pw->registry) {
+		obs_pw->registry = NULL;
+	}
+	g_clear_pointer(&obs_pw->context, pw_context_destroy);
+	g_clear_pointer(&obs_pw->thread_loop, pw_thread_loop_destroy);
+
+	if (obs_pw->pipewire_fd > 0) {
+		close(obs_pw->pipewire_fd);
+		obs_pw->pipewire_fd = 0;
+	}
+}
+
+/* ------------------------------------------------- */
+
+static void on_registry_global_cb(void *user_data, uint32_t id,
+				  uint32_t permissions, const char *type,
+				  uint32_t version,
+				  const struct spa_dict *props)
+{
+	if (strcmp(type, PW_TYPE_INTERFACE_Node) != 0) {
+		return;
+	}
+
+	obs_pipewire_registry_data *obs_pw = user_data;
+	obs_pipewire_registry_device_data *device =
+		bzalloc(sizeof(obs_pipewire_registry_device_data));
+
+	device->device.id = id;
+	device->device.version = version;
+
+	const struct spa_dict_item *item;
+	spa_dict_for_each(item, props)
+	{
+		if (!item || !item->key || !item->value)
+			return;
+		if (strcmp(item->key, "node.name") == 0) {
+			device->device.name = bstrdup(item->value);
+		} else if (strcmp(item->key, "node.description") == 0) {
+			device->device.description = bstrdup(item->value);
+		} else if (strcmp(item->key, "node.nick") == 0) {
+			device->device.nick = bstrdup(item->value);
+		} else if (strcmp(item->key, "object.path") == 0) {
+			device->device.path = bstrdup(item->value);
+		} else if (strcmp(item->key, "media.class") == 0) {
+			device->device.class = bstrdup(item->value);
+		} else if (strcmp(item->key, "media.role") == 0) {
+			device->device.role = bstrdup(item->value);
+		}
+	}
+
+	spa_list_append(&obs_pw->devices, &device->link);
+
+	obs_pipewire_registry_callback_data *callback;
+	spa_list_for_each(callback, &obs_pw->callback_data, link)
+	{
+		callback->callbacks->device_added(callback->user_data,
+						  &device->device);
+	}
+}
+
+static void on_registry_global_remove_cb(void *user_data, uint32_t id)
+{
+	obs_pipewire_registry_data *obs_pw = user_data;
+
+	obs_pipewire_registry_device_data *device, *tmp;
+	spa_list_for_each_safe(device, tmp, &obs_pw->devices, link)
+	{
+		if (device->device.id != id)
+			continue;
+		obs_pipewire_registry_callback_data *callback;
+		spa_list_for_each(callback, &obs_pw->callback_data, link)
+		{
+			callback->callbacks->device_removed(callback->user_data,
+							    device->device.id);
+		}
+		bfree(device->device.name);
+		bfree(device->device.description);
+		bfree(device->device.nick);
+		bfree(device->device.path);
+		bfree(device->device.class);
+		bfree(device->device.role);
+		spa_list_remove(&device->link);
+		bfree(device);
+	}
+}
+
+static const struct pw_registry_events registry_events = {
+	PW_VERSION_REGISTRY_EVENTS,
+	.global = on_registry_global_cb,
+	.global_remove = on_registry_global_remove_cb,
+};
+
+/* ------------------------------------------------- */
+
+void *obs_pipewire_registry_register_callback(
+	obs_pipewire_registry_data *obs_pw,
+	obs_pipewire_registry_callbacks *callbacks, void *user_data)
+{
+	obs_pipewire_registry_callback_data *callback =
+		bzalloc(sizeof(obs_pipewire_registry_callback_data));
+
+	callback->user_data = user_data;
+	callback->callbacks = callbacks;
+
+	spa_list_append(&obs_pw->callback_data, &callback->link);
+
+	obs_pipewire_registry_device_data *device;
+	spa_list_for_each(device, &obs_pw->devices, link)
+	{
+		callback->callbacks->device_added(callback->user_data,
+						  &device->device);
+	}
+	return callback;
+}
+
+void *obs_pipewire_registry_remove_callback(obs_pipewire_registry_data *obs_pw,
+					    void *registry_callback)
+{
+	obs_pipewire_registry_callback_data *callback, *tmp;
+	spa_list_for_each_safe(callback, tmp, &obs_pw->callback_data, link)
+	{
+		if (callback != registry_callback)
+			continue;
+		spa_list_remove(&callback->link);
+		bfree(callback);
+	}
+}
+
+/* ------------------------------------------------- */
+
+static void init_pipewire_registry(obs_pipewire_registry_data *obs_pw)
+{
+	obs_pw->thread_loop = pw_thread_loop_new("PipeWire thread loop", NULL);
+	obs_pw->context = pw_context_new(
+		pw_thread_loop_get_loop(obs_pw->thread_loop), NULL, 0);
+
+	if (pw_thread_loop_start(obs_pw->thread_loop) < 0) {
+		blog(LOG_WARNING, "Error starting threaded mainloop");
+		return;
+	}
+
+	pw_thread_loop_lock(obs_pw->thread_loop);
+
+	/* Core */
+	obs_pw->core = pw_context_connect_fd(
+		obs_pw->context, fcntl(obs_pw->pipewire_fd, F_DUPFD_CLOEXEC, 5),
+		NULL, 0);
+	if (!obs_pw->core) {
+		blog(LOG_WARNING, "Error creating PipeWire core: %m");
+		pw_thread_loop_unlock(obs_pw->thread_loop);
+		return;
+	}
+
+	pw_core_add_listener(obs_pw->core, &obs_pw->core_listener, &core_events,
+			     obs_pw);
+
+	// Dispatch to receive the info core event
+	obs_pw->server_version_sync = pw_core_sync(obs_pw->core, PW_ID_CORE,
+						   obs_pw->server_version_sync);
+	pw_thread_loop_wait(obs_pw->thread_loop);
+
+	/* Registry */
+	obs_pw->registry =
+		pw_core_get_registry(obs_pw->core, PW_VERSION_REGISTRY, 0);
+	pw_registry_add_listener(obs_pw->registry, &obs_pw->registry_listener,
+				 &registry_events, obs_pw);
+	blog(LOG_INFO, "[pipewire] Created registry %p", obs_pw->registry);
+
+	pw_thread_loop_unlock(obs_pw->thread_loop);
+}
+
+obs_pipewire_registry_data *obs_pipewire_registry_create(int pipewire_fd)
+{
+
+	obs_pipewire_registry_data *obs_pw =
+		bzalloc(sizeof(obs_pipewire_registry_data));
+
+	obs_pw->pipewire_fd = pipewire_fd;
+
+	spa_list_init(&obs_pw->callback_data);
+	spa_list_init(&obs_pw->devices);
+
+	init_pipewire_registry(obs_pw);
+
+	return obs_pw;
+}
+
+void obs_pipewire_registry_destroy(obs_pipewire_registry_data *obs_pw)
+{
+	if (!obs_pw)
+		return;
+
+	teardown_pipewire_registry(obs_pw);
+
+	bfree(obs_pw);
+}

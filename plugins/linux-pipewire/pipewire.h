@@ -46,3 +46,35 @@ void obs_pipewire_stream_video_render(obs_pipewire_stream_data *obs_pw,
 
 void obs_pipewire_stream_set_cursor_visible(obs_pipewire_stream_data *obs_pw,
 					    bool cursor_visible);
+
+/* PipeWire Registry */
+
+typedef struct _obs_pipewire_registry_device obs_pipewire_registry_device;
+typedef struct _obs_pipewire_registry_callbacks obs_pipewire_registry_callbacks;
+typedef struct _obs_pipewire_registry_data obs_pipewire_registry_data;
+
+struct _obs_pipewire_registry_device {
+	uint32_t id;
+	uint32_t version;
+
+	char *name;
+	char *description;
+	char *path;
+	char *nick;
+	char *class;
+	char *role;
+};
+
+struct _obs_pipewire_registry_callbacks {
+	void (*device_added)(void *, obs_pipewire_registry_device *);
+	void (*device_removed)(void *, uint32_t);
+};
+
+void *obs_pipewire_registry_register_callback(
+	obs_pipewire_registry_data *obs_pw,
+	obs_pipewire_registry_callbacks *callbacks, void *user_data);
+void *obs_pipewire_registry_remove_callback(obs_pipewire_registry_data *obs_pw,
+					    void *registry_callback);
+
+obs_pipewire_registry_data *obs_pipewire_registry_create(int pipewire_fd);
+void obs_pipewire_registry_destroy(obs_pipewire_registry_data *obs_pw);
