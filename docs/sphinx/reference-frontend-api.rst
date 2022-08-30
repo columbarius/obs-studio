@@ -721,7 +721,8 @@ Functions
 
 .. function:: obs_output_t *obs_frontend_get_virtualcam_output(void)
 
-   :return: A new reference to the current virtual camera output
+   :return: A new reference to the last virtual camera implementation
+            output
 
 ---------------------------------------
 
