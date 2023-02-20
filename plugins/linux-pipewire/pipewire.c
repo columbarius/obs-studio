@@ -605,6 +605,19 @@ static void on_process_cb(void *user_data)
 		obs_pw->crop.valid = false;
 	}
 
+	/* Video Damage */
+	struct spa_meta *damage =
+		spa_buffer_find_meta(buffer, SPA_META_VideoDamage);
+	if (damage) {
+		struct spa_region *d_region = spa_meta_first(damage);
+		while (spa_meta_check(d_region, damage)) {
+			blog(LOG_INFO, "[pipewire] damage: %u,%u,%ux%u",
+			     d_region->position.x, d_region->position.y,
+			     d_region->size.width, d_region->size.height);
+			d_region++;
+		}
+	}
+
 read_metadata:
 
 	/* Cursor */
@@ -656,7 +669,7 @@ static void on_param_changed_cb(void *user_data, uint32_t id,
 {
 	obs_pipewire *obs_pw = user_data;
 	struct spa_pod_builder pod_builder;
-	const struct spa_pod *params[4];
+	const struct spa_pod *params[5];
 	uint32_t buffer_types;
 	uint8_t params_buffer[1024];
 	int result;
@@ -732,7 +745,17 @@ static void on_param_changed_cb(void *user_data, uint32_t id,
 		SPA_PARAM_META_size,
 		SPA_POD_Int(sizeof(struct spa_meta_header)));
 
-	pw_stream_update_params(obs_pw->stream, params, 4);
+	/* Video damage */
+	params[4] = spa_pod_builder_add_object(
+		&pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+		SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoDamage),
+		SPA_PARAM_META_size,
+		SPA_POD_CHOICE_RANGE_Int(
+			sizeof(struct spa_region) * 8,
+			sizeof(struct spa_region) * 1,
+			sizeof(struct spa_region) * 16));
+
+	pw_stream_update_params(obs_pw->stream, params, 5);
 
 	obs_pw->negotiated = true;
 }
